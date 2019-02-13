@@ -269,3 +269,7 @@ contributors:
 * Svetoslav Neykov: contributor
 
 * Federico Bond: contributor
+
+* Thomas Hisch: contributor
+
+* Clément Pit-Claudel : contributor
