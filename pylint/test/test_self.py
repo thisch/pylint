@@ -96,7 +96,7 @@ class MultiReporter(BaseReporter):
             rep.linter = value
 
 
-class TestRunTC(object):
+class TestRunTCBase(object):
     def _runtest(self, args, reporter=None, out=None, code=None):
         if out is None:
             out = StringIO()
@@ -133,6 +133,8 @@ class TestRunTC(object):
         actual_output = self._clean_paths(out.getvalue())
         assert expected_output.strip() in actual_output.strip()
 
+
+class TestRunTC(TestRunTCBase):
     def test_pkginfo(self):
         """Make pylint check itself."""
         self._runtest(["pylint.__pkginfo__"], reporter=TextReporter(StringIO()), code=0)
@@ -548,6 +550,9 @@ class TestRunTC(object):
             os.remove(module)
             os.removedirs(fake_path)
 
+
+@pytest.mark.usefixtures('tmpdir')
+class TestRunStdin(TestRunTCBase):
     @pytest.mark.parametrize(
         "input_path,module,expected_path",
         [
@@ -572,3 +577,55 @@ class TestRunTC(object):
 
     def test_stdin_missing_modulename(self):
         self._runtest(["--from-stdin"], code=32)
+
+    def test_relative_imports(self, tmpdir):
+        a = tmpdir.join('a')
+
+        b_code = textwrap.dedent("""
+            from .c import foobar
+            from .d import bla  # module does not exist
+
+            foobar('hello')
+            bla()
+        """)
+
+        c_code = textwrap.dedent("""
+            def foobar(arg):
+                pass
+        """)
+
+        a.mkdir()
+        a.join('__init__.py').write('')
+        a.join('b.py').write(b_code)
+        a.join('c.py').write(c_code)
+
+        curdir = os.getcwd()
+        try:
+            # why don't we start pylint in a subprocess?
+            os.chdir(str(tmpdir))
+            sys.path.insert(0, str(tmpdir))
+
+            expected = (
+                '************* Module a.b\n'
+                'a/b.py:3:0: E0401: Unable to import \'a.d\' (import-error)'
+            )
+
+            self._test_output(
+                    ["a/b.py"], expected_output=expected
+            )
+
+            expected = (
+                '************ Module b\n'
+                # FIXME why are relative imports not working here?
+                'a/b.py:2:0: E0402: Attempted relative import beyond top-level package (relative-beyond-top-level)\n'
+                'a/b.py:3:0: E0402: Attempted relative import beyond top-level package (relative-beyond-top-level)'
+            )
+            with mock.patch(
+                    "pylint.lint._read_stdin", return_value=b_code):
+                self._test_output(
+                    ["--from-stdin", 'a/b.py'], expected_output=expected
+                )
+
+        finally:
+            os.chdir(curdir)
+            sys.path = sys.path[1:]
