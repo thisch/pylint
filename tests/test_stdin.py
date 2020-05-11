@@ -11,7 +11,6 @@ import textwrap
 import warnings
 from io import StringIO
 from os.path import abspath, dirname, join
-from unittest import mock
 
 import pytest
 
@@ -77,20 +76,20 @@ def check_output(args, expected_output):
         ("mymodule.py", "mymodule", "mymodule.py"),
     ],
 )
-def test_stdin(input_path, module, expected_path):
+def test_stdin(input_path, module, expected_path, mocker):
     expected_output = (
         "************* Module {module}\n"
         "{path}:1:0: W0611: Unused import os (unused-import)\n\n"
     ).format(path=expected_path, module=module)
 
-    with mock.patch(
+    mock_stdin = mocker.patch(
         "pylint.lint.pylinter._read_stdin", return_value="import os\n"
-    ) as mock_stdin:
-        check_output(
-            ["--from-stdin", input_path, "--disable=all", "--enable=unused-import"],
-            expected_output=expected_output,
-        )
-        assert mock_stdin.call_count == 1
+    )
+    check_output(
+        ["--from-stdin", input_path, "--disable=all", "--enable=unused-import"],
+        expected_output=expected_output,
+    )
+    assert mock_stdin.call_count == 1
 
 
 def test_stdin_missing_modulename():
@@ -98,7 +97,7 @@ def test_stdin_missing_modulename():
 
 
 @pytest.mark.parametrize("write_bpy_to_disk", [False, True])
-def test_relative_imports(write_bpy_to_disk, tmpdir):
+def test_relative_imports(write_bpy_to_disk, tmpdir, mocker):
     a = tmpdir.join("a")
 
     b_code = textwrap.dedent(
@@ -140,29 +139,27 @@ def test_relative_imports(write_bpy_to_disk, tmpdir):
 
         # this code needs to work w/ and w/o a file named a/b.py on the
         # harddisk.
-        with mock.patch("pylint.lint.pylinter._read_stdin", return_value=b_code):
-            check_output(
-                [
-                    "--from-stdin",
-                    join("a", "b.py"),
-                    "--disable=all",
-                    "--enable=import-error",
-                ],
-                expected_output=expected,
-            )
+        mocker.patch("pylint.lint.pylinter._read_stdin", return_value=b_code)
+        check_output(
+            [
+                "--from-stdin",
+                join("a", "b.py"),
+                "--disable=all",
+                "--enable=import-error",
+            ],
+            expected_output=expected,
+        )
 
 
-def test_stdin_syntaxerror():
+def test_stdin_syntaxerror(mocker):
     expected_output = (
         "************* Module a\n"
         "a.py:1:4: E0001: invalid syntax (<unknown>, line 1) (syntax-error)"
     )
 
-    with mock.patch(
-        "pylint.lint.pylinter._read_stdin", return_value="for\n"
-    ) as mock_stdin:
-        check_output(
-            ["--from-stdin", "a.py", "--disable=all", "--enable=syntax-error"],
-            expected_output=expected_output,
-        )
-        assert mock_stdin.call_count == 1
+    mock_stdin = mocker.patch("pylint.lint.pylinter._read_stdin", return_value="for\n")
+    check_output(
+        ["--from-stdin", "a.py", "--disable=all", "--enable=syntax-error"],
+        expected_output=expected_output,
+    )
+    assert mock_stdin.call_count == 1
